@@ -1,0 +1,16 @@
+[
+{
+  "modid": "tcinventoryscan",
+  "name": "TC Inventory Scanning",
+  "description": "Allows hovering over items while holding a Thaumometer to scan them.",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["BlayTheNinth"],
+  "credits": "BlayTheNinth",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]
