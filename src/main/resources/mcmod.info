@@ -2,7 +2,7 @@
 {
   "modid": "tcinventoryscan",
   "name": "TC Inventory Scanning",
-  "description": "Allows hovering over items while holding a Thaumometer to scan them.",
+  "description": "Allows hovering over items in inventories while holding a Thaumometer to scan them.",
   "version": "${version}",
   "mcversion": "${mcversion}",
   "url": "",
