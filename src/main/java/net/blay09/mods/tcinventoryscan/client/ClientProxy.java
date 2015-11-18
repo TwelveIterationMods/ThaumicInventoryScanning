@@ -5,6 +5,7 @@ import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
+import cpw.mods.fml.common.network.FMLNetworkEvent;
 import cpw.mods.fml.common.registry.GameRegistry;
 import net.blay09.mods.tcinventoryscan.CommonProxy;
 import net.blay09.mods.tcinventoryscan.net.MessageScanSelf;
@@ -20,6 +21,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.Slot;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.ChatComponentText;
 import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
@@ -39,6 +41,10 @@ public class ClientProxy extends CommonProxy {
     private static final int INVENTORY_PLAYER_WIDTH = 52;
     private static final int INVENTORY_PLAYER_HEIGHT = 70;
 
+    private static final int HELLO_TIMEOUT = 20 * 60;
+
+    private int helloTimeout;
+    private boolean isEnabled;
     private Item thaumometer;
     private Slot mouseSlot;
     private Slot lastScannedSlot;
@@ -64,10 +70,26 @@ public class ClientProxy extends CommonProxy {
     }
 
     @SubscribeEvent
+    public void connectedToServer(FMLNetworkEvent.ClientConnectedToServerEvent event) {
+        helloTimeout = HELLO_TIMEOUT;
+        isEnabled = false;
+    }
+
+    @SubscribeEvent
     public void clientTick(TickEvent.ClientTickEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayer entityPlayer = mc.thePlayer;
         if (entityPlayer != null) {
+            if (helloTimeout > 0) {
+                helloTimeout--;
+                if (helloTimeout <= 0) {
+                    entityPlayer.addChatMessage(new ChatComponentText("This server does not have Crafting Tweaks installed. It will be disabled."));
+                    isEnabled = false;
+                }
+            }
+            if (!isEnabled) {
+                return;
+            }
             ItemStack mouseItem = entityPlayer.inventory.getItemStack();
             if (mouseItem != null && mouseItem.getItem() == thaumometer) {
                 if (mouseSlot != null && mouseSlot.getStack() != null && mouseSlot.canTakeStack(entityPlayer) && mouseSlot != lastScannedSlot) {
@@ -92,7 +114,7 @@ public class ClientProxy extends CommonProxy {
                         currentScan = null;
                         lastScannedSlot = mouseSlot;
                     }
-                } else if(isHoveringPlayer && currentScan != null) {
+                } else if (isHoveringPlayer && currentScan != null) {
                     ticksHovered++;
                     if (ScanManager.isValidScanTarget(entityPlayer, currentScan, "@")) {
                         if (ticksHovered > SOUND_TICKS && ticksHovered % 2 == 0) {
@@ -117,14 +139,14 @@ public class ClientProxy extends CommonProxy {
 
     @SubscribeEvent
     public void onTooltip(ItemTooltipEvent event) {
-        if(event.itemStack.getItem() == thaumometer) {
+        if (isEnabled && event.itemStack.getItem() == thaumometer) {
             event.toolTip.add("\u00a76" + I18n.format("tcinventoryscan:thaumometerTooltip"));
         }
     }
 
     @SubscribeEvent
     public void onDrawScreen(GuiScreenEvent.DrawScreenEvent.Post event) {
-        if (event.gui instanceof GuiContainer) {
+        if (isEnabled && event.gui instanceof GuiContainer) {
             Minecraft mc = Minecraft.getMinecraft();
             EntityPlayer entityPlayer = mc.thePlayer;
             boolean oldHoveringPlayer = isHoveringPlayer;
@@ -155,7 +177,7 @@ public class ClientProxy extends CommonProxy {
                     }
                     event.gui.renderToolTip(mouseSlot.getStack(), event.mouseX, event.mouseY);
                     effectRenderer.renderAspectsInGui((GuiContainer) event.gui, entityPlayer);
-                } else if(isHoveringPlayer) {
+                } else if (isHoveringPlayer) {
                     if (currentScan != null) {
                         renderScanningProgress(event.gui, event.mouseX, event.mouseY, ticksHovered / (float) SCAN_TICKS);
                     }
@@ -190,5 +212,12 @@ public class ClientProxy extends CommonProxy {
 
     public boolean isHoveringPlayer(GuiContainer gui, int mouseX, int mouseY) {
         return gui instanceof GuiInventory && mouseX >= gui.guiLeft + INVENTORY_PLAYER_X && mouseX < gui.guiLeft + INVENTORY_PLAYER_X + INVENTORY_PLAYER_WIDTH && mouseY >= gui.guiTop + INVENTORY_PLAYER_Y && mouseY < gui.guiTop + INVENTORY_PLAYER_Y + INVENTORY_PLAYER_HEIGHT;
+    }
+
+    @Override
+    public void receivedHello(EntityPlayer entityPlayer) {
+        super.receivedHello(entityPlayer);
+        helloTimeout = 0;
+        isEnabled = true;
     }
 }
