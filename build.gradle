@@ -24,7 +24,7 @@ apply plugin: 'forge'
 apply plugin: 'maven'
 
 version = "1.0." + BUILD_NUMBER
-group = "net.blay09.mods" // http://maven.apache.org/guides/mini/guide-naming-conventions.html
+group = "net.blay09.mods"
 archivesBaseName = "tcinventoryscan"
 
 minecraft {
@@ -85,7 +85,6 @@ artifacts {
 }
 
 uploadArchives {
-    dependsOn 'reobf'
     repositories {
         mavenDeployer {
             repository(url: MAVEN_REPO) {

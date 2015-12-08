@@ -1,5 +1,6 @@
 package net.blay09.mods.tcinventoryscan.client;
 
+import cpw.mods.fml.client.FMLClientHandler;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
@@ -13,6 +14,7 @@ import net.blay09.mods.tcinventoryscan.net.MessageScanSlot;
 import net.blay09.mods.tcinventoryscan.net.NetworkHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.renderer.RenderHelper;
@@ -25,11 +27,20 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
+import org.lwjgl.input.Keyboard;
+import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import thaumcraft.api.aspects.Aspect;
+import thaumcraft.api.aspects.AspectList;
 import thaumcraft.api.research.ScanResult;
 import thaumcraft.client.lib.ClientTickEventsFML;
+import thaumcraft.client.lib.UtilsFX;
+import thaumcraft.common.Thaumcraft;
+import thaumcraft.common.lib.crafting.ThaumcraftCraftingManager;
 import thaumcraft.common.lib.research.ScanManager;
+
+import java.util.List;
 
 public class ClientProxy extends CommonProxy {
 
@@ -141,6 +152,9 @@ public class ClientProxy extends CommonProxy {
     public void onTooltip(ItemTooltipEvent event) {
         if (isEnabled && event.itemStack.getItem() == thaumometer) {
             event.toolTip.add("\u00a76" + I18n.format("tcinventoryscan:thaumometerTooltip"));
+            if (Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT)) {
+                event.toolTip.add("\u00a75" + I18n.format("tcinventoryscan:thaumometerTooltipMore"));
+            }
         }
     }
 
@@ -181,9 +195,60 @@ public class ClientProxy extends CommonProxy {
                     if (currentScan != null) {
                         renderScanningProgress(event.gui, event.mouseX, event.mouseY, ticksHovered / (float) SCAN_TICKS);
                     }
+                    if(ScanManager.hasBeenScanned(entityPlayer, new ScanResult((byte) 2, 0, 0, entityPlayer, ""))) {
+                        renderPlayerAspects(event.gui, event.mouseX, event.mouseY);
+                    }
                 }
             }
         }
+    }
+
+    public void renderPlayerAspects(GuiScreen gui, int mouseX, int mouseY) {
+        GL11.glPushMatrix();
+        GL11.glColor4f(1f, 1f, 1f, 1f);
+        GL11.glPushAttrib(1048575);
+        GL11.glDisable(GL11.GL_LIGHTING);
+        int shiftX = Thaumcraft.instance.aspectShift ? -16 : -8;
+        int shiftY = Thaumcraft.instance.aspectShift ? -16 : -8;
+        int x = mouseX + 17;
+        int y = mouseY + 7 - 33;
+        EntityPlayer entityPlayer = FMLClientHandler.instance().getClientPlayerEntity();
+        AspectList aspectList = ScanManager.generateEntityAspects(entityPlayer);
+        if (aspectList != null) {
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            if (aspectList.size() > 0) {
+                Aspect[] sortedAspects = aspectList.getAspectsSortedAmount();
+                for (Aspect aspect : sortedAspects) {
+                    if (aspect != null) {
+                        x += 18;
+                        UtilsFX.bindTexture("textures/aspects/_back.png");
+                        GL11.glPushMatrix();
+                        GL11.glEnable(GL11.GL_BLEND);
+                        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+                        GL11.glTranslatef(x + shiftX - 2, y + shiftY - 2, 0f);
+                        GL11.glScalef(1.25f, 1.25f, 0f);
+                        UtilsFX.drawTexturedQuadFull(0, 0, UtilsFX.getGuiZLevel(gui));
+                        GL11.glDisable(GL11.GL_BLEND);
+                        GL11.glPopMatrix();
+                        if (Thaumcraft.proxy.playerKnowledge.hasDiscoveredAspect(entityPlayer.getCommandSenderName(), aspect)) {
+                            UtilsFX.drawTag(x + shiftX, y + shiftY, aspect, aspectList.getAmount(aspect), 0, UtilsFX.getGuiZLevel(gui));
+                        } else {
+                            UtilsFX.bindTexture("textures/aspects/_unknown.png");
+                            GL11.glPushMatrix();
+                            GL11.glEnable(GL11.GL_BLEND);
+                            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+                            GL11.glTranslatef(x + shiftX, y + shiftY, 0f);
+                            UtilsFX.drawTexturedQuadFull(0, 0, UtilsFX.getGuiZLevel(gui));
+                            GL11.glDisable(GL11.GL_BLEND);
+                            GL11.glPopMatrix();
+                        }
+                    }
+                }
+            }
+            GL11.glEnable(GL11.GL_DEPTH_TEST);
+        }
+        GL11.glPopAttrib();
+        GL11.glPopMatrix();
     }
 
     public void renderScanningProgress(GuiScreen gui, int mouseX, int mouseY, float progress) {
