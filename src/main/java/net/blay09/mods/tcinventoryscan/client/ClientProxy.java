@@ -154,7 +154,10 @@ public class ClientProxy extends CommonProxy {
         if (isEnabled && event.itemStack.getItem() == thaumometer) {
             event.toolTip.add("\u00a76" + I18n.format("tcinventoryscan:thaumometerTooltip"));
             if (Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT)) {
-                event.toolTip.add("\u00a75" + I18n.format("tcinventoryscan:thaumometerTooltipMore"));
+                String[] lines = I18n.format("tcinventoryscan:thaumometerTooltipMore").split("\\\\n");
+                for(String line : lines) {
+                    event.toolTip.add("\u00a73" + line);
+                }
             }
         }
     }
