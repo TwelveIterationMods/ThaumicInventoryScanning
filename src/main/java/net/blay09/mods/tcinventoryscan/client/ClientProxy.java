@@ -115,8 +115,13 @@ public class ClientProxy extends CommonProxy {
                             entityPlayer.worldObj.playSound(entityPlayer.posX, entityPlayer.posY, entityPlayer.posZ, "thaumcraft:cameraticks", 0.2F, 0.45F + entityPlayer.worldObj.rand.nextFloat() * 0.1F, false);
                         }
                         if (ticksHovered >= SCAN_TICKS) {
-                            if (ScanManager.completeScan(entityPlayer, currentScan, "@")) {
-                                NetworkHandler.instance.sendToServer(new MessageScanSlot(mouseSlot.slotNumber));
+                            try {
+                                if (ScanManager.completeScan(entityPlayer, currentScan, "@")) {
+                                    NetworkHandler.instance.sendToServer(new MessageScanSlot(mouseSlot.slotNumber));
+                                }
+                            } catch (StackOverflowError e) {
+                                // Can't do anything about Thaumcraft freaking out except for calming it down if it does.
+                                // If Thaumcraft happens to get into a weird recipe loop, we just ignore that and assume the item unscannable.
                             }
                             ticksHovered = 0;
                             lastScannedSlot = mouseSlot;
@@ -133,8 +138,13 @@ public class ClientProxy extends CommonProxy {
                             entityPlayer.worldObj.playSound(entityPlayer.posX, entityPlayer.posY, entityPlayer.posZ, "thaumcraft:cameraticks", 0.2F, 0.45F + entityPlayer.worldObj.rand.nextFloat() * 0.1F, false);
                         }
                         if (ticksHovered >= SCAN_TICKS) {
-                            if (ScanManager.completeScan(entityPlayer, currentScan, "@")) {
-                                NetworkHandler.instance.sendToServer(new MessageScanSelf());
+                            try {
+                                if (ScanManager.completeScan(entityPlayer, currentScan, "@")) {
+                                    NetworkHandler.instance.sendToServer(new MessageScanSelf());
+                                }
+                            } catch (StackOverflowError e) {
+                                // Can't do anything about Thaumcraft freaking out except for calming it down if it does.
+                                // If Thaumcraft happens to get into a weird recipe loop, we just ignore that and assume the item unscannable.
                             }
                             ticksHovered = 0;
                             currentScan = null;
