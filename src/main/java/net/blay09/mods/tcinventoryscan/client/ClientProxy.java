@@ -1,22 +1,15 @@
 package net.blay09.mods.tcinventoryscan.client;
 
-import cpw.mods.fml.client.FMLClientHandler;
-import cpw.mods.fml.common.FMLCommonHandler;
-import cpw.mods.fml.common.event.FMLInitializationEvent;
-import cpw.mods.fml.common.event.FMLPostInitializationEvent;
-import cpw.mods.fml.common.eventhandler.SubscribeEvent;
-import cpw.mods.fml.common.gameevent.TickEvent;
-import cpw.mods.fml.common.network.FMLNetworkEvent;
-import cpw.mods.fml.common.registry.GameRegistry;
 import net.blay09.mods.tcinventoryscan.CommonProxy;
 import net.blay09.mods.tcinventoryscan.net.MessageScanSelf;
 import net.blay09.mods.tcinventoryscan.net.MessageScanSlot;
 import net.blay09.mods.tcinventoryscan.net.NetworkHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.gui.inventory.GuiContainer;
+import net.minecraft.client.gui.inventory.GuiContainerCreative;
 import net.minecraft.client.gui.inventory.GuiInventory;
+import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.entity.player.EntityPlayer;
@@ -24,29 +17,35 @@ import net.minecraft.inventory.Slot;
 import net.minecraft.inventory.SlotCrafting;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.SoundCategory;
+import net.minecraft.util.SoundEvent;
+import net.minecraft.util.text.TextComponentTranslation;
+import net.minecraft.util.text.TextFormatting;
 import net.minecraftforge.client.event.GuiScreenEvent;
+import net.minecraftforge.client.event.RenderTooltipEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import net.minecraftforge.fml.client.FMLClientHandler;
+import net.minecraftforge.fml.common.event.FMLInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraftforge.fml.common.network.FMLNetworkEvent;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import thaumcraft.api.aspects.Aspect;
+import thaumcraft.api.aspects.AspectHelper;
 import thaumcraft.api.aspects.AspectList;
-import thaumcraft.api.research.ScanResult;
-import thaumcraft.client.lib.ClientTickEventsFML;
-import thaumcraft.client.lib.UtilsFX;
-import thaumcraft.common.Thaumcraft;
-import thaumcraft.common.lib.crafting.ThaumcraftCraftingManager;
-import thaumcraft.common.lib.research.ScanManager;
+import thaumcraft.api.research.ScanningManager;
 
-import java.util.List;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
 public class ClientProxy extends CommonProxy {
 
-    private static final int SCAN_TICKS = 50;
-    private static final int SOUND_TICKS = 5;
+    private static final int SCAN_TICKS = 25;
+    private static final int SOUND_TICKS = 3;
 
     private static final int INVENTORY_PLAYER_X = 26;
     private static final int INVENTORY_PLAYER_Y = 8;
@@ -57,28 +56,28 @@ public class ClientProxy extends CommonProxy {
 
     private int helloTimeout;
     private boolean isEnabled;
+
     private Item thaumometer;
+    private SoundEvent researchSound;
+
     private Slot mouseSlot;
     private Slot lastScannedSlot;
     private int ticksHovered;
-    private ClientTickEventsFML effectRenderer;
-    private ScanResult currentScan;
+    private Object currentScan;
     private boolean isHoveringPlayer;
 
     @Override
     public void init(FMLInitializationEvent event) {
         super.init(event);
         MinecraftForge.EVENT_BUS.register(this);
-        FMLCommonHandler.instance().bus().register(this);
-
-        effectRenderer = new ClientTickEventsFML();
     }
 
     @Override
     public void postInit(FMLPostInitializationEvent event) {
         super.postInit(event);
 
-        thaumometer = GameRegistry.findItem("Thaumcraft", "ItemThaumometer");
+        thaumometer = Item.REGISTRY.getObject(new ResourceLocation("thaumcraft", "thaumometer"));
+        researchSound = SoundEvent.REGISTRY.getObject(new ResourceLocation("thaumcraft", "scan"));
     }
 
     @SubscribeEvent
@@ -87,36 +86,47 @@ public class ClientProxy extends CommonProxy {
         isEnabled = false;
     }
 
+    private boolean isHoldingThaumometer() {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayer entityPlayer = mc.player;
+        ItemStack mouseItem = entityPlayer.inventory.getItemStack();
+        return mouseItem != null && mouseItem.getItem() == thaumometer;
+    }
+
     @SubscribeEvent
     public void clientTick(TickEvent.ClientTickEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayer entityPlayer = mc.thePlayer;
+        EntityPlayer entityPlayer = mc.player;
         if (entityPlayer != null) {
             if (helloTimeout > 0) {
                 helloTimeout--;
                 if (helloTimeout <= 0) {
-                    entityPlayer.addChatMessage(new ChatComponentText("This server does not have Crafting Tweaks installed. It will be disabled."));
+                    entityPlayer.sendStatusMessage(new TextComponentTranslation("tcinventoryscan:serverNotInstalled"));
                     isEnabled = false;
                 }
             }
             if (!isEnabled) {
                 return;
             }
-            ItemStack mouseItem = entityPlayer.inventory.getItemStack();
-            if (mouseItem != null && mouseItem.getItem() == thaumometer) {
-                if (mouseSlot != null && mouseSlot.getStack() != null && mouseSlot.canTakeStack(entityPlayer) && mouseSlot != lastScannedSlot && !(mouseSlot instanceof SlotCrafting)) {
+
+            if (isHoldingThaumometer()) {
+                if ((isHoveringPlayer && currentScan != null) || (mouseSlot != null && mouseSlot.getStack() != null && mouseSlot.canTakeStack(entityPlayer) && mouseSlot != lastScannedSlot && !(mouseSlot instanceof SlotCrafting))) {
                     ticksHovered++;
-                    ItemStack itemStack = mouseSlot.getStack();
+
                     if (currentScan == null) {
-                        currentScan = new ScanResult((byte) 1, Item.getIdFromItem(itemStack.getItem()), itemStack.getItemDamage(), null, "");
+                        currentScan = mouseSlot.getStack();
                     }
-                    if (ScanManager.isValidScanTarget(entityPlayer, currentScan, "@")) {
-                        if (ticksHovered > SOUND_TICKS && ticksHovered % 2 == 0) {
-                            entityPlayer.worldObj.playSound(entityPlayer.posX, entityPlayer.posY, entityPlayer.posZ, "thaumcraft:cameraticks", 0.2F, 0.45F + entityPlayer.worldObj.rand.nextFloat() * 0.1F, false);
+
+                    if (ScanningManager.isThingStillScannable(entityPlayer, currentScan)) {
+                        if (ticksHovered > SOUND_TICKS && ticksHovered % 4 == 0) {
+                            entityPlayer.world.playSound(entityPlayer.posX, entityPlayer.posY, entityPlayer.posZ, researchSound, SoundCategory.NEUTRAL, 0.2f, 0.45f + entityPlayer.world.rand.nextFloat() * 0.1f, false);
                         }
+
                         if (ticksHovered >= SCAN_TICKS) {
                             try {
-                                if (ScanManager.completeScan(entityPlayer, currentScan, "@")) {
+                                if (currentScan instanceof EntityPlayer) {
+                                    NetworkHandler.instance.sendToServer(new MessageScanSelf());
+                                } else {
                                     NetworkHandler.instance.sendToServer(new MessageScanSlot(mouseSlot.slotNumber));
                                 }
                             } catch (StackOverflowError e) {
@@ -131,25 +141,6 @@ public class ClientProxy extends CommonProxy {
                         currentScan = null;
                         lastScannedSlot = mouseSlot;
                     }
-                } else if (isHoveringPlayer && currentScan != null) {
-                    ticksHovered++;
-                    if (ScanManager.isValidScanTarget(entityPlayer, currentScan, "@")) {
-                        if (ticksHovered > SOUND_TICKS && ticksHovered % 2 == 0) {
-                            entityPlayer.worldObj.playSound(entityPlayer.posX, entityPlayer.posY, entityPlayer.posZ, "thaumcraft:cameraticks", 0.2F, 0.45F + entityPlayer.worldObj.rand.nextFloat() * 0.1F, false);
-                        }
-                        if (ticksHovered >= SCAN_TICKS) {
-                            try {
-                                if (ScanManager.completeScan(entityPlayer, currentScan, "@")) {
-                                    NetworkHandler.instance.sendToServer(new MessageScanSelf());
-                                }
-                            } catch (StackOverflowError e) {
-                                // Can't do anything about Thaumcraft freaking out except for calming it down if it does.
-                                // If Thaumcraft happens to get into a weird recipe loop, we just ignore that and assume the item unscannable.
-                            }
-                            ticksHovered = 0;
-                            currentScan = null;
-                        }
-                    }
                 }
             } else {
                 ticksHovered = 0;
@@ -161,27 +152,37 @@ public class ClientProxy extends CommonProxy {
 
     @SubscribeEvent
     public void onTooltip(ItemTooltipEvent event) {
-        if (isEnabled && event.itemStack.getItem() == thaumometer) {
-            event.toolTip.add("\u00a76" + I18n.format("tcinventoryscan:thaumometerTooltip"));
-            if (Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT)) {
+        if (isEnabled && event.getItemStack().getItem() == thaumometer) {
+            event.getToolTip().add(TextFormatting.GOLD + I18n.format("tcinventoryscan:thaumometerTooltip"));
+            if (GuiScreen.isShiftKeyDown()) {
                 String[] lines = I18n.format("tcinventoryscan:thaumometerTooltipMore").split("\\\\n");
-                for(String line : lines) {
-                    event.toolTip.add("\u00a73" + line);
+                for (String line : lines) {
+                    event.getToolTip().add(TextFormatting.DARK_AQUA + line);
                 }
             }
         }
     }
 
     @SubscribeEvent
-    public void onDrawScreen(GuiScreenEvent.DrawScreenEvent.Post event) {
-        if (isEnabled && event.gui instanceof GuiContainer) {
+    public void onTooltipPostText(RenderTooltipEvent.PostText event) {
+        if (isHoldingThaumometer() && !GuiScreen.isShiftKeyDown()) {
             Minecraft mc = Minecraft.getMinecraft();
-            EntityPlayer entityPlayer = mc.thePlayer;
+            if (mc.currentScreen instanceof GuiContainer && !ScanningManager.isThingStillScannable(mc.player, event.getStack())) {
+                renderAspectsInGui((GuiContainer) mc.currentScreen, mc.player, event.getStack(), 0, event.getX(), event.getY());
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onDrawScreen(GuiScreenEvent.DrawScreenEvent.Post event) {
+        if (isEnabled && event.getGui() instanceof GuiContainer && !(event.getGui() instanceof GuiContainerCreative)) {
+            Minecraft mc = Minecraft.getMinecraft();
+            EntityPlayer entityPlayer = mc.player;
             boolean oldHoveringPlayer = isHoveringPlayer;
-            isHoveringPlayer = isHoveringPlayer((GuiContainer) event.gui, event.mouseX, event.mouseY);
+            isHoveringPlayer = isHoveringPlayer((GuiContainer) event.getGui(), event.getMouseX(), event.getMouseY());
             if (!isHoveringPlayer) {
                 Slot oldMouseSlot = mouseSlot;
-                mouseSlot = ((GuiContainer) event.gui).getSlotAtPosition(event.mouseX, event.mouseY);
+                mouseSlot = ((GuiContainer) event.getGui()).getSlotUnderMouse();
                 if (oldMouseSlot != mouseSlot) {
                     ticksHovered = 0;
                     currentScan = null;
@@ -190,8 +191,8 @@ public class ClientProxy extends CommonProxy {
             if (oldHoveringPlayer != isHoveringPlayer) {
                 ticksHovered = 0;
                 if (isHoveringPlayer) {
-                    currentScan = new ScanResult((byte) 2, 0, 0, entityPlayer, "");
-                    if (!ScanManager.isValidScanTarget(entityPlayer, currentScan, "@")) {
+                    currentScan = entityPlayer;
+                    if (!ScanningManager.isThingStillScannable(entityPlayer, currentScan)) {
                         currentScan = null;
                     }
                 }
@@ -201,71 +202,107 @@ public class ClientProxy extends CommonProxy {
             if (mouseItem != null && mouseItem.getItem() == thaumometer) {
                 if (mouseSlot != null && mouseSlot.getStack() != null) {
                     if (currentScan != null) {
-                        renderScanningProgress(event.gui, event.mouseX, event.mouseY, ticksHovered / (float) SCAN_TICKS);
+                        renderScanningProgress(event.getGui(), event.getMouseX(), event.getMouseY(), ticksHovered / (float) SCAN_TICKS);
                     }
-                    event.gui.renderToolTip(mouseSlot.getStack(), event.mouseX, event.mouseY);
-                    effectRenderer.renderAspectsInGui((GuiContainer) event.gui, entityPlayer);
+                    event.getGui().renderToolTip(mouseSlot.getStack(), event.getMouseX(), event.getMouseY());
                 } else if (isHoveringPlayer) {
                     if (currentScan != null) {
-                        renderScanningProgress(event.gui, event.mouseX, event.mouseY, ticksHovered / (float) SCAN_TICKS);
+                        renderScanningProgress(event.getGui(), event.getMouseX(), event.getMouseY(), ticksHovered / (float) SCAN_TICKS);
                     }
-                    if(ScanManager.hasBeenScanned(entityPlayer, new ScanResult((byte) 2, 0, 0, entityPlayer, ""))) {
-                        renderPlayerAspects(event.gui, event.mouseX, event.mouseY);
+                    if (!ScanningManager.isThingStillScannable(entityPlayer, entityPlayer)) {
+                        renderPlayerAspects(event.getGui(), event.getMouseX(), event.getMouseY());
                     }
                 }
             }
         }
     }
 
-    public void renderPlayerAspects(GuiScreen gui, int mouseX, int mouseY) {
-        GL11.glPushMatrix();
-        GL11.glColor4f(1f, 1f, 1f, 1f);
+    private boolean renderAspectsInGuiHasErrored;
+    private Object hudHandlerInstance;
+    private Method renderAspectsInGuiMethod;
+
+    @SuppressWarnings("unchecked")
+    private void renderAspectsInGui(GuiContainer guiContainer, EntityPlayer player, ItemStack itemStack, int d, int x, int y) {
+        if (renderAspectsInGuiHasErrored) {
+            return;
+        }
+
+        if (hudHandlerInstance == null) {
+            try {
+                Class renderEventHandler = Class.forName("thaumcraft.client.lib.events.RenderEventHandler");
+                Object instance = renderEventHandler.getField("INSTANCE").get(null);
+                hudHandlerInstance = renderEventHandler.getField("hudHandler").get(instance);
+                Class hudHandler = Class.forName("thaumcraft.client.lib.events.HudHandler");
+                renderAspectsInGuiMethod = hudHandler.getMethod("renderAspectsInGui", GuiContainer.class, EntityPlayer.class, ItemStack.class, int.class, int.class, int.class);
+            } catch (ClassNotFoundException | IllegalAccessException | NoSuchFieldException | NoSuchMethodException e) {
+                renderAspectsInGuiHasErrored = true;
+                e.printStackTrace();
+                return;
+            }
+        }
+
+        try {
+            renderAspectsInGuiMethod.invoke(hudHandlerInstance, guiContainer, player, itemStack, d, x, y);
+        } catch (IllegalAccessException | InvocationTargetException e) {
+            renderAspectsInGuiHasErrored = true;
+            e.printStackTrace();
+        }
+    }
+
+    private boolean drawTagHasErrored;
+    private Method drawTagMethod;
+
+    @SuppressWarnings("unchecked")
+    private void drawTag(int x, int y, Aspect aspect, float amount, int bonus, double zLevel) {
+        if (drawTagHasErrored) {
+            return;
+        }
+
+        if (drawTagMethod == null) {
+            try {
+                Class utilsFX = Class.forName("thaumcraft.client.lib.UtilsFX");
+                drawTagMethod = utilsFX.getMethod("drawTag", int.class, int.class, Aspect.class, float.class, int.class, double.class);
+            } catch (ClassNotFoundException | NoSuchMethodException e) {
+                drawTagHasErrored = true;
+                e.printStackTrace();
+                return;
+            }
+        }
+
+        try {
+            drawTagMethod.invoke(null, x, y, aspect, amount, bonus, zLevel);
+        } catch (IllegalAccessException | InvocationTargetException e) {
+            drawTagHasErrored = true;
+            e.printStackTrace();
+        }
+    }
+
+    private void renderPlayerAspects(GuiScreen gui, int mouseX, int mouseY) {
+        GlStateManager.pushMatrix();
+        GlStateManager.color(1f, 1f, 1f, 1f);
         GL11.glPushAttrib(1048575);
-        GL11.glDisable(GL11.GL_LIGHTING);
-        int shiftX = Thaumcraft.instance.aspectShift ? -16 : -8;
-        int shiftY = Thaumcraft.instance.aspectShift ? -16 : -8;
+        GlStateManager.disableLighting();
         int x = mouseX + 17;
         int y = mouseY + 7 - 33;
         EntityPlayer entityPlayer = FMLClientHandler.instance().getClientPlayerEntity();
-        AspectList aspectList = ScanManager.generateEntityAspects(entityPlayer);
-        if (aspectList != null) {
-            GL11.glDisable(GL11.GL_DEPTH_TEST);
-            if (aspectList.size() > 0) {
-                Aspect[] sortedAspects = aspectList.getAspectsSortedAmount();
-                for (Aspect aspect : sortedAspects) {
-                    if (aspect != null) {
-                        x += 18;
-                        UtilsFX.bindTexture("textures/aspects/_back.png");
-                        GL11.glPushMatrix();
-                        GL11.glEnable(GL11.GL_BLEND);
-                        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-                        GL11.glTranslatef(x + shiftX - 2, y + shiftY - 2, 0f);
-                        GL11.glScalef(1.25f, 1.25f, 0f);
-                        UtilsFX.drawTexturedQuadFull(0, 0, UtilsFX.getGuiZLevel(gui));
-                        GL11.glDisable(GL11.GL_BLEND);
-                        GL11.glPopMatrix();
-                        if (Thaumcraft.proxy.playerKnowledge.hasDiscoveredAspect(entityPlayer.getCommandSenderName(), aspect)) {
-                            UtilsFX.drawTag(x + shiftX, y + shiftY, aspect, aspectList.getAmount(aspect), 0, UtilsFX.getGuiZLevel(gui));
-                        } else {
-                            UtilsFX.bindTexture("textures/aspects/_unknown.png");
-                            GL11.glPushMatrix();
-                            GL11.glEnable(GL11.GL_BLEND);
-                            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-                            GL11.glTranslatef(x + shiftX, y + shiftY, 0f);
-                            UtilsFX.drawTexturedQuadFull(0, 0, UtilsFX.getGuiZLevel(gui));
-                            GL11.glDisable(GL11.GL_BLEND);
-                            GL11.glPopMatrix();
-                        }
-                    }
+        AspectList aspectList = AspectHelper.getEntityAspects(entityPlayer);
+        if (aspectList != null && aspectList.size() > 0) {
+            GlStateManager.disableDepth();
+            Aspect[] sortedAspects = aspectList.getAspectsSortedByAmount();
+            for (Aspect aspect : sortedAspects) {
+                if (aspect != null) {
+                    drawTag(x, y, aspect, aspectList.getAmount(aspect), 0, gui.zLevel);
+                    x += 18;
                 }
             }
-            GL11.glEnable(GL11.GL_DEPTH_TEST);
+            GlStateManager.enableLighting();
+            GlStateManager.enableDepth();
         }
         GL11.glPopAttrib();
-        GL11.glPopMatrix();
+        GlStateManager.popMatrix();
     }
 
-    public void renderScanningProgress(GuiScreen gui, int mouseX, int mouseY, float progress) {
+    private void renderScanningProgress(GuiScreen gui, int mouseX, int mouseY, float progress) {
         StringBuilder sb = new StringBuilder("\u00a76");
         sb.append(I18n.format("tcinventoryscan:scanning"));
         if (progress >= 0.75f) {
@@ -281,7 +318,7 @@ public class ClientProxy extends CommonProxy {
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         float oldZLevel = gui.zLevel;
         gui.zLevel = 300;
-        Minecraft.getMinecraft().fontRenderer.drawStringWithShadow(sb.toString(), mouseX, mouseY - 30, Integer.MAX_VALUE);
+        Minecraft.getMinecraft().fontRendererObj.drawStringWithShadow(sb.toString(), mouseX, mouseY - 30, 0xFFFFFFFF);
         gui.zLevel = oldZLevel;
         GL11.glEnable(GL11.GL_LIGHTING);
         GL11.glEnable(GL11.GL_DEPTH_TEST);
@@ -289,7 +326,7 @@ public class ClientProxy extends CommonProxy {
         GL11.glEnable(GL12.GL_RESCALE_NORMAL);
     }
 
-    public boolean isHoveringPlayer(GuiContainer gui, int mouseX, int mouseY) {
+    private boolean isHoveringPlayer(GuiContainer gui, int mouseX, int mouseY) {
         return gui instanceof GuiInventory && mouseX >= gui.guiLeft + INVENTORY_PLAYER_X && mouseX < gui.guiLeft + INVENTORY_PLAYER_X + INVENTORY_PLAYER_WIDTH && mouseY >= gui.guiTop + INVENTORY_PLAYER_Y && mouseY < gui.guiTop + INVENTORY_PLAYER_Y + INVENTORY_PLAYER_HEIGHT;
     }
 

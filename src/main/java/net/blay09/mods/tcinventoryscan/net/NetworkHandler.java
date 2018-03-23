@@ -1,8 +1,8 @@
 package net.blay09.mods.tcinventoryscan.net;
 
-import cpw.mods.fml.common.network.simpleimpl.SimpleNetworkWrapper;
-import cpw.mods.fml.relauncher.Side;
 import net.blay09.mods.tcinventoryscan.TCInventoryScanning;
+import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper;
+import net.minecraftforge.fml.relauncher.Side;
 
 public class NetworkHandler {
 

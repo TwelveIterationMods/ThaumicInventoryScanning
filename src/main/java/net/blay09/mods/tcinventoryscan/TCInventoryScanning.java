@@ -1,12 +1,12 @@
 package net.blay09.mods.tcinventoryscan;
 
-import cpw.mods.fml.common.Mod;
-import cpw.mods.fml.common.SidedProxy;
-import cpw.mods.fml.common.event.FMLInitializationEvent;
-import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import net.blay09.mods.tcinventoryscan.net.NetworkHandler;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.SidedProxy;
+import net.minecraftforge.fml.common.event.FMLInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 
-@Mod(modid = TCInventoryScanning.MOD_ID, name = "TC Inventory Scanning", acceptableRemoteVersions = "*", dependencies = "required-after:Thaumcraft")
+@Mod(modid = TCInventoryScanning.MOD_ID, name = "TC Inventory Scanning", acceptableRemoteVersions = "*", dependencies = "required-after:thaumcraft")
 public class TCInventoryScanning {
 
     public static final String MOD_ID = "tcinventoryscan";

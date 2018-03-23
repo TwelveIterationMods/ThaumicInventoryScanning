@@ -1,7 +1,7 @@
 package net.blay09.mods.tcinventoryscan.net;
 
-import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import io.netty.buffer.ByteBuf;
+import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
 
 public class MessageScanSlot implements IMessage {
     private int slotNumber;
