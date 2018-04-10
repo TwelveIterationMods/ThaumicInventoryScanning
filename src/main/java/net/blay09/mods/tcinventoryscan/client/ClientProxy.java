@@ -88,8 +88,11 @@ public class ClientProxy extends CommonProxy {
 
     private boolean isHoldingThaumometer() {
         Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayer entityPlayer = mc.player;
-        ItemStack mouseItem = entityPlayer.inventory.getItemStack();
+        if (mc.player == null) {
+            return false;
+        }
+
+        ItemStack mouseItem = mc.player.inventory.getItemStack();
         return mouseItem != null && mouseItem.getItem() == thaumometer;
     }
 
