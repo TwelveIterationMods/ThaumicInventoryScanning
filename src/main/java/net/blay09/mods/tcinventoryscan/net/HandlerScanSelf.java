@@ -10,7 +10,7 @@ public class HandlerScanSelf implements IMessageHandler<MessageScanSelf, IMessag
 
     @Override
     public IMessage onMessage(MessageScanSelf message, MessageContext ctx) {
-        EntityPlayer entityPlayer = ctx.getServerHandler().playerEntity;
+        EntityPlayer entityPlayer = ctx.getServerHandler().player;
         ScanningManager.scanTheThing(entityPlayer, entityPlayer);
         return null;
     }

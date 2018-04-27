@@ -14,11 +14,11 @@ public class HandlerScanSlot implements IMessageHandler<MessageScanSlot, IMessag
 
     @Override
     public IMessage onMessage(MessageScanSlot message, MessageContext ctx) {
-        EntityPlayer entityPlayer = ctx.getServerHandler().playerEntity;
+        EntityPlayer entityPlayer = ctx.getServerHandler().player;
         Container container = entityPlayer.openContainer;
         if (container != null && message.getSlotNumber() >= 0 && message.getSlotNumber() < container.inventorySlots.size()) {
             Slot slot = container.inventorySlots.get(message.getSlotNumber());
-            if (slot.getStack() != null && slot.canTakeStack(entityPlayer) && !(slot instanceof SlotCrafting)) {
+            if (!slot.getStack().isEmpty() && slot.canTakeStack(entityPlayer) && !(slot instanceof SlotCrafting)) {
                 ItemStack itemStack = slot.getStack();
                 ScanningManager.scanTheThing(entityPlayer, itemStack);
             }

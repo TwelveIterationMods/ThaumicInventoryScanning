@@ -1,6 +1,7 @@
 package net.blay09.mods.tcinventoryscan.client;
 
 import net.blay09.mods.tcinventoryscan.CommonProxy;
+import net.blay09.mods.tcinventoryscan.TCInventoryScanning;
 import net.blay09.mods.tcinventoryscan.net.MessageScanSelf;
 import net.blay09.mods.tcinventoryscan.net.MessageScanSlot;
 import net.blay09.mods.tcinventoryscan.net.NetworkHandler;
@@ -31,7 +32,6 @@ import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
-import net.minecraftforge.fml.common.network.FMLNetworkEvent;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import thaumcraft.api.aspects.Aspect;
@@ -52,13 +52,10 @@ public class ClientProxy extends CommonProxy {
     private static final int INVENTORY_PLAYER_WIDTH = 52;
     private static final int INVENTORY_PLAYER_HEIGHT = 70;
 
-    private static final int HELLO_TIMEOUT = 20 * 60;
-
-    private int helloTimeout;
-    private boolean isEnabled;
-
     private Item thaumometer;
     private SoundEvent researchSound;
+
+    private boolean missingMessageSent;
 
     private Slot mouseSlot;
     private Slot lastScannedSlot;
@@ -80,12 +77,6 @@ public class ClientProxy extends CommonProxy {
         researchSound = SoundEvent.REGISTRY.getObject(new ResourceLocation("thaumcraft", "scan"));
     }
 
-    @SubscribeEvent
-    public void connectedToServer(FMLNetworkEvent.ClientConnectedToServerEvent event) {
-        helloTimeout = HELLO_TIMEOUT;
-        isEnabled = false;
-    }
-
     private boolean isHoldingThaumometer() {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.player == null) {
@@ -93,7 +84,7 @@ public class ClientProxy extends CommonProxy {
         }
 
         ItemStack mouseItem = mc.player.inventory.getItemStack();
-        return mouseItem != null && mouseItem.getItem() == thaumometer;
+        return !mouseItem.isEmpty() && mouseItem.getItem() == thaumometer;
     }
 
     @SubscribeEvent
@@ -101,19 +92,16 @@ public class ClientProxy extends CommonProxy {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayer entityPlayer = mc.player;
         if (entityPlayer != null) {
-            if (helloTimeout > 0) {
-                helloTimeout--;
-                if (helloTimeout <= 0) {
-                    entityPlayer.sendStatusMessage(new TextComponentTranslation("tcinventoryscan:serverNotInstalled"));
-                    isEnabled = false;
+            if (!TCInventoryScanning.isServerSideInstalled) {
+                if (!missingMessageSent) {
+                    entityPlayer.sendStatusMessage(new TextComponentTranslation("tcinventoryscan:serverNotInstalled"), false);
+                    missingMessageSent = true;
                 }
-            }
-            if (!isEnabled) {
                 return;
             }
 
             if (isHoldingThaumometer()) {
-                if ((isHoveringPlayer && currentScan != null) || (mouseSlot != null && mouseSlot.getStack() != null && mouseSlot.canTakeStack(entityPlayer) && mouseSlot != lastScannedSlot && !(mouseSlot instanceof SlotCrafting))) {
+                if ((isHoveringPlayer && currentScan != null) || (mouseSlot != null && !mouseSlot.getStack().isEmpty() && mouseSlot.canTakeStack(entityPlayer) && mouseSlot != lastScannedSlot && !(mouseSlot instanceof SlotCrafting))) {
                     ticksHovered++;
 
                     if (currentScan == null) {
@@ -126,15 +114,10 @@ public class ClientProxy extends CommonProxy {
                         }
 
                         if (ticksHovered >= SCAN_TICKS) {
-                            try {
-                                if (currentScan instanceof EntityPlayer) {
-                                    NetworkHandler.instance.sendToServer(new MessageScanSelf());
-                                } else {
-                                    NetworkHandler.instance.sendToServer(new MessageScanSlot(mouseSlot.slotNumber));
-                                }
-                            } catch (StackOverflowError e) {
-                                // Can't do anything about Thaumcraft freaking out except for calming it down if it does.
-                                // If Thaumcraft happens to get into a weird recipe loop, we just ignore that and assume the item unscannable.
+                            if (currentScan instanceof EntityPlayer) {
+                                NetworkHandler.instance.sendToServer(new MessageScanSelf());
+                            } else {
+                                NetworkHandler.instance.sendToServer(new MessageScanSlot(mouseSlot.slotNumber));
                             }
                             ticksHovered = 0;
                             lastScannedSlot = mouseSlot;
@@ -155,7 +138,7 @@ public class ClientProxy extends CommonProxy {
 
     @SubscribeEvent
     public void onTooltip(ItemTooltipEvent event) {
-        if (isEnabled && event.getItemStack().getItem() == thaumometer) {
+        if (TCInventoryScanning.isServerSideInstalled && event.getItemStack().getItem() == thaumometer) {
             event.getToolTip().add(TextFormatting.GOLD + I18n.format("tcinventoryscan:thaumometerTooltip"));
             if (GuiScreen.isShiftKeyDown()) {
                 String[] lines = I18n.format("tcinventoryscan:thaumometerTooltipMore").split("\\\\n");
@@ -178,7 +161,7 @@ public class ClientProxy extends CommonProxy {
 
     @SubscribeEvent
     public void onDrawScreen(GuiScreenEvent.DrawScreenEvent.Post event) {
-        if (isEnabled && event.getGui() instanceof GuiContainer && !(event.getGui() instanceof GuiContainerCreative)) {
+        if (TCInventoryScanning.isServerSideInstalled && event.getGui() instanceof GuiContainer && !(event.getGui() instanceof GuiContainerCreative)) {
             Minecraft mc = Minecraft.getMinecraft();
             EntityPlayer entityPlayer = mc.player;
             boolean oldHoveringPlayer = isHoveringPlayer;
@@ -321,7 +304,7 @@ public class ClientProxy extends CommonProxy {
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         float oldZLevel = gui.zLevel;
         gui.zLevel = 300;
-        Minecraft.getMinecraft().fontRendererObj.drawStringWithShadow(sb.toString(), mouseX, mouseY - 30, 0xFFFFFFFF);
+        Minecraft.getMinecraft().fontRenderer.drawStringWithShadow(sb.toString(), mouseX, mouseY - 30, 0xFFFFFFFF);
         gui.zLevel = oldZLevel;
         GL11.glEnable(GL11.GL_LIGHTING);
         GL11.glEnable(GL11.GL_DEPTH_TEST);
@@ -333,10 +316,4 @@ public class ClientProxy extends CommonProxy {
         return gui instanceof GuiInventory && mouseX >= gui.guiLeft + INVENTORY_PLAYER_X && mouseX < gui.guiLeft + INVENTORY_PLAYER_X + INVENTORY_PLAYER_WIDTH && mouseY >= gui.guiTop + INVENTORY_PLAYER_Y && mouseY < gui.guiTop + INVENTORY_PLAYER_Y + INVENTORY_PLAYER_HEIGHT;
     }
 
-    @Override
-    public void receivedHello(EntityPlayer entityPlayer) {
-        super.receivedHello(entityPlayer);
-        helloTimeout = 0;
-        isEnabled = true;
-    }
 }
