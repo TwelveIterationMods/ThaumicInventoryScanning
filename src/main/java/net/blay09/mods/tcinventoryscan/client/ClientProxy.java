@@ -185,8 +185,8 @@ public class ClientProxy extends CommonProxy {
             }
 
             ItemStack mouseItem = entityPlayer.inventory.getItemStack();
-            if (mouseItem != null && mouseItem.getItem() == thaumometer) {
-                if (mouseSlot != null && mouseSlot.getStack() != null) {
+            if (!mouseItem.isEmpty() && mouseItem.getItem() == thaumometer) {
+                if (mouseSlot != null && !mouseSlot.getStack().isEmpty()) {
                     if (currentScan != null) {
                         renderScanningProgress(event.getGui(), event.getMouseX(), event.getMouseY(), ticksHovered / (float) SCAN_TICKS);
                     }
