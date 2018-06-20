@@ -1,4 +1,4 @@
 dependencies {
     compile "baubles:Baubles:1.12:1.5.2"
-    compile "thaumcraft:Thaumcraft:1.12.2:6.1.BETA13"
+    compile "thaumcraft:Thaumcraft:1.12.2:6.1.BETA16"
 }

@@ -1,7 +1,7 @@
 [
 {
   "modid": "tcinventoryscan",
-  "name": "Thaumcrafft Inventory Scanning",
+  "name": "Thaumic Inventory Scanning",
   "description": "Allows hovering over items in inventories while holding a Thaumometer to scan them.",
   "version": "${version}",
   "mcversion": "${mcversion}",
